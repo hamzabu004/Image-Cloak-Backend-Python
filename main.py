@@ -1,3 +1,4 @@
+import uuid
 from time import sleep
 
 from fastapi import FastAPI, File, UploadFile, Form
@@ -14,6 +15,7 @@ import cloudinary.uploader
 import cloudinary.api
 import requests
 from fastapi.responses import JSONResponse
+from Stegnographer.steganography_advanced import encode, decode
 
 # Configure Cloudinary - add your credentials
 cloudinary.config(
@@ -24,14 +26,14 @@ cloudinary.config(
 
 app = FastAPI()
 
-
 @app.post("/encrypt-image/")
 async def encrypt_image(image_url: str = Form(...), password: str = Form(...), iv: bytes = Form(...),
-                        mode: int = Form(...), isSteg: bool = Form(...), stegImage: UploadFile = File(...)):
-    # Fetch the image from Cloudinary URL
+                        mode: int = Form(...), isSteg: bool = Form(...), stegImage: UploadFile = Form(...)) :
+      # Fetch the image from Cloudinary URL
+
     response = requests.get(image_url)
     if response.status_code != 200:
-        return JSONResponse(content={"error": "Failed to fetch image from URL"}, status_code=400)
+        return JSONResponse(content={"error": "Failed to fetch image from URL"}, status_code=403)
 
     # Process the image
     image_data = response.content
@@ -57,40 +59,71 @@ async def encrypt_image(image_url: str = Form(...), password: str = Form(...), i
     ivCiphertextVoid = iv + ciphertext + bytes(void)
     imageEncrypted = np.frombuffer(ivCiphertextVoid, dtype=imageOrig.dtype).reshape(rowOrig + 1, columnOrig, depthOrig)
 
-    # Save the encrypted image to a BMP file in memory
-    is_success, buffer = cv2.imencode(".bmp", imageEncrypted)
-    if not is_success:
-        return JSONResponse(content={"error": "Failed to encode encrypted image"}, status_code=500)
-
-        # Create a temporary file to upload to Cloudinary
     temp_filename = f"encrypted_image_{os.urandom(8).hex()}.bmp"
-    with open(temp_filename, "wb") as f:
-        f.write(buffer)
+    # Save the encrypted image to a BMP file in memory
+    success = cv2.imwrite(temp_filename, imageEncrypted)
+        # Create a temporary file to upload to Cloudinary
+    if not success:
+        return JSONResponse(content={"error": "Failed to save encrypted image"}, status_code=401)
 
     try:
         # Upload the encrypted image to Cloudinary
         upload_result = cloudinary.uploader.upload(
-            temp_filename,
-            folder="encrypted_images",
-            resource_type="image"
+          temp_filename,
+          folder="encrypted_images",
+          resource_type="image"
         )
-        if isSteg:
-            pass
-        # Return the new Cloudinary URL
-        return JSONResponse(content={
+        response_to_send = {
             "encrypted_image_url": upload_result["secure_url"],
-            "public_id": upload_result["public_id"]
-        })
+        }
+        if isSteg:
+            # Hide decrypted image in carrier image
+            try :
+
+                # Process the image
+                stegImageUnprocessed = await stegImage.read()
+                stegImageUnprocessedPath = f"steg_image_{os.urandom(8).hex()}.png"
+                with open(stegImageUnprocessedPath, "wb") as f:
+                    f.write(stegImageUnprocessed)
+                # use path for encoding
+                # read encrypted image
+                global encryptedImage
+                with open(temp_filename, "rb") as f:
+                    encryptedImage = f.read()
+                # debug encode data
+
+
+                steg_img = encode(stegImageUnprocessedPath, encryptedImage, n_bits=4)
+                if steg_img is None:
+                    return JSONResponse(content={"error": "Failed to hide encrypted image in carrier image"}, status_code=500)
+                temp_filename_steg = f"steg_image_{uuid.uuid4()}.png"
+                cv2.imwrite(temp_filename_steg, steg_img)
+                upload_result_steg = cloudinary.uploader.upload(
+                    temp_filename_steg,
+                    folder="steg_images",
+                    resource_type="image"
+                )
+                response_to_send["steg_image_url"] = upload_result_steg["secure_url"]
+
+            #     clean up
+            #     os.unlink(temp_filename_steg)
+            #     os.unlink(stegImageUnprocessedPath)
+            except Exception as e2:
+                print(e2)
+                return JSONResponse(content={"error": f"Failed to hide encrypted image in carrier image: {str(e2)}"}, status_code=500)
+
+        # Return the new Cloudinary UR
+        # L
+        return JSONResponse(content=response_to_send)
     except Exception as e:
+        print(e)
         return JSONResponse(content={"error": f"Failed to upload to Cloudinary: {str(e)}"}, status_code=500)
     finally:
         # Clean up the temporary file
         if os.path.exists(temp_filename):
             os.remove(temp_filename)
 
-
 from pydantic import BaseModel
-
 
 class DecryptForm(BaseModel):
     image: UploadFile = File(...)
@@ -101,25 +134,25 @@ class DecryptForm(BaseModel):
 
 @app.post("/decrypt-img/")
 async def d_img(
-        image: UploadFile = File(...),
-        password: str = Form(...),
-        iv: str = Form(...),
-        format: str = Form(...)
-):
+    image: UploadFile = File(...),
+    password: str = Form(...),
+    iv: str = Form(...),
+    format: str = Form(...)
+    ):
     # Read the encrypted image
     return JSONResponse({
         "image": image.filename
     })
 
-
 @app.post("/decrypt-image/")
 async def decrypt_image(
-        image: UploadFile = File(...),
-        password: str = Form(...),
-        iv: str = Form(...),
-        mode: str = Form(...),
-        format: str = Form(...)
-):
+    image: UploadFile = File(...),
+    password: str = Form(...),
+    iv: str = Form(...),
+    mode: str = Form(...),
+    format: str = Form(...),
+    isSteg: bool = Form(...)
+    ):
     # Fetch the image from URL
     # response = requests.get(image_url)
     # if response.status_code != 200:
@@ -128,15 +161,37 @@ async def decrypt_image(
     mode = AES.MODE_CBC
     ivSize = AES.block_size if mode == AES.MODE_CBC else 0
 
-    global image_data
+    global image_data, imageEncrypted
     # Process the downloaded image
-    try:
+    try :
         image_data = await image.read()
+        # do processing for steg image
+        if isSteg == True:
+
+            #     store image in disk
+            steg_unprocessed = "steg_image" + os.urandom(8).hex() + ".png"
+            with open(steg_unprocessed, "wb") as f:
+                f.write(image_data)
+            #     pass path to decode function
+            decoded_image = decode(steg_unprocessed, n_bits=4, in_bytes=True)
+            if decoded_image is None:
+                return JSONResponse(content={"error": "Failed to decode the image"}, status_code=500)
+            temp_filename = f"decrypted_image_{os.urandom(8).hex()}.bmp"
+            with open(temp_filename, "wb") as f:
+                f.write(decoded_image)
+            imageEncrypted = cv2.imread(temp_filename, flags=cv2.IMREAD_ANYCOLOR)
+
+        else:
+            nparr = np.frombuffer(image_data, np.uint8)
+            imageEncrypted = cv2.imdecode(nparr, cv2.IMREAD_ANYCOLOR)
+
     except Exception as e:
+        print(e)
         return JSONResponse(content={"error": f"Failed to read image: {str(e)}"}, status_code=500)
 
-    nparr = np.frombuffer(image_data, np.uint8)
-    imageEncrypted = cv2.imdecode(nparr, cv2.IMREAD_ANYCOLOR)
+
+
+
 
     rowEncrypted, columnOrig, depthOrig = imageEncrypted.shape
     rowOrig = rowEncrypted - 1
@@ -160,13 +215,11 @@ async def decrypt_image(
     # Save the decrypted image to a BMP file in memory
 
     print(format.split("/")[-1])
-    is_success, buffer = cv2.imencode("." + format.split("/")[1], decryptedImage)
+    is_success, buffer = cv2.imencode("."+format.split("/")[1], decryptedImage)
     io_buf = io.BytesIO(buffer)
 
     return StreamingResponse(io_buf, media_type=format)
 
-
 if __name__ == "__main__":
     import uvicorn
-
     uvicorn.run(app, host="0.0.0.0", port=8000)

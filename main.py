@@ -112,7 +112,11 @@ async def encrypt_image(image_url: str = Form(...), password: str = Form(...), i
                 print(e2)
                 return JSONResponse(content={"error": f"Failed to hide encrypted image in carrier image: {str(e2)}"}, status_code=500)
             finally:
-                os.unlink(encryptedImage)
+                if os.path.exists(temp_filename_steg):
+                    os.remove(temp_filename_steg)
+                if os.path.exists(stegImageUnprocessedPath):
+                    os.remove(stegImageUnprocessedPath)
+
         # Return the new Cloudinary UR
         # L
         return JSONResponse(content=response_to_send)
@@ -120,10 +124,9 @@ async def encrypt_image(image_url: str = Form(...), password: str = Form(...), i
         print(e)
         return JSONResponse(content={"error": f"Failed to upload to Cloudinary: {str(e)}"}, status_code=500)
     finally:
-        pass
         # Clean up the temporary file
-        # if os.path.exists(temp_filename):
-        #     os.remove(temp_filename)
+        if os.path.exists(temp_filename):
+            os.remove(temp_filename)
 
 from pydantic import BaseModel
 
@@ -163,7 +166,7 @@ async def decrypt_image(
     mode = AES.MODE_CBC
     ivSize = AES.block_size if mode == AES.MODE_CBC else 0
 
-    global image_data, imageEncrypted
+    global image_data, imageEncrypted, temp_filename, steg_unprocessed
     # Process the downloaded image
     try :
         image_data = await image.read()
@@ -190,8 +193,11 @@ async def decrypt_image(
     except Exception as e:
         print(e)
         return JSONResponse(content={"error": f"Failed to read image: {str(e)}"}, status_code=500)
-
-
+    finally:
+        if os.path.exists(temp_filename):
+            os.remove(temp_filename)
+        if os.path.exists(steg_unprocessed):
+            os.remove(steg_unprocessed)
 
 
 

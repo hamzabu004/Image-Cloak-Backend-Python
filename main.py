@@ -76,6 +76,8 @@ async def encrypt_image(image_url: str = Form(...), password: str = Form(...), i
         response_to_send = {
             "encrypted_image_url": upload_result["secure_url"],
         }
+        temp_filename_steg = None
+        stegImageUnprocessedPath = None
         if isSteg:
             # Hide decrypted image in carrier image
             try :
@@ -112,9 +114,9 @@ async def encrypt_image(image_url: str = Form(...), password: str = Form(...), i
                 print(e2)
                 return JSONResponse(content={"error": f"Failed to hide encrypted image in carrier image: {str(e2)}"}, status_code=500)
             finally:
-                if os.path.exists(temp_filename_steg):
+                if temp_filename_steg and os.path.exists(temp_filename_steg):
                     os.remove(temp_filename_steg)
-                if os.path.exists(stegImageUnprocessedPath):
+                if stegImageUnprocessedPath and os.path.exists(stegImageUnprocessedPath):
                     os.remove(stegImageUnprocessedPath)
 
         # Return the new Cloudinary UR
@@ -166,9 +168,12 @@ async def decrypt_image(
     mode = AES.MODE_CBC
     ivSize = AES.block_size if mode == AES.MODE_CBC else 0
 
-    global image_data, imageEncrypted, temp_filename, steg_unprocessed
+    # Initialize variables before the try block
+    steg_unprocessed = None
+    temp_filename = None
     # Process the downloaded image
     try :
+
         image_data = await image.read()
         # do processing for steg image
         if isSteg == True:
@@ -194,9 +199,9 @@ async def decrypt_image(
         print(e)
         return JSONResponse(content={"error": f"Failed to read image: {str(e)}"}, status_code=500)
     finally:
-        if os.path.exists(temp_filename):
+        if temp_filename and os.path.exists(temp_filename):
             os.remove(temp_filename)
-        if os.path.exists(steg_unprocessed):
+        if steg_unprocessed and os.path.exists(steg_unprocessed):
             os.remove(steg_unprocessed)
 
 

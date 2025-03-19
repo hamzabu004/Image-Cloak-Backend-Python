@@ -28,7 +28,7 @@ app = FastAPI()
 
 @app.post("/encrypt-image/")
 async def encrypt_image(image_url: str = Form(...), password: str = Form(...), iv: bytes = Form(...),
-                        mode: int = Form(...), isSteg: bool = Form(...), stegImage: UploadFile = Form(...)) :
+                        mode: int = Form(...), isSteg: bool = Form(...), stegImage: UploadFile = None) :
       # Fetch the image from Cloudinary URL
 
     response = requests.get(image_url)
@@ -111,7 +111,8 @@ async def encrypt_image(image_url: str = Form(...), password: str = Form(...), i
             except Exception as e2:
                 print(e2)
                 return JSONResponse(content={"error": f"Failed to hide encrypted image in carrier image: {str(e2)}"}, status_code=500)
-
+            finally:
+                os.unlink(encryptedImage)
         # Return the new Cloudinary UR
         # L
         return JSONResponse(content=response_to_send)
@@ -119,9 +120,10 @@ async def encrypt_image(image_url: str = Form(...), password: str = Form(...), i
         print(e)
         return JSONResponse(content={"error": f"Failed to upload to Cloudinary: {str(e)}"}, status_code=500)
     finally:
+        pass
         # Clean up the temporary file
-        if os.path.exists(temp_filename):
-            os.remove(temp_filename)
+        # if os.path.exists(temp_filename):
+        #     os.remove(temp_filename)
 
 from pydantic import BaseModel
 

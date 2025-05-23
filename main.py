@@ -124,7 +124,7 @@ async def encrypt_image(image_url: str = Form(...), password: str = Form(...), i
         return JSONResponse(content=response_to_send)
     except Exception as e:
         print(e)
-        return JSONResponse(content={"error": f"Failed to upload to Cloudinary: {str(e)}"}, status_code=500)
+        return JSONResponse(content={"error": f"Failed to Uplaod to Cloudinary: Size exceeded 10 MB"}, status_code=500)
     finally:
         # Clean up the temporary file
         if os.path.exists(temp_filename):
@@ -166,7 +166,6 @@ async def decrypt_image(
     #     return JSONResponse(content={"error": "Failed to fetch image from URL"}, status_code=400)
     #
     mode = AES.MODE_CBC
-    ivSize = AES.block_size if mode == AES.MODE_CBC else 0
 
     # Initialize variables before the try block
     steg_unprocessed = None

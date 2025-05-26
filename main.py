@@ -1,6 +1,7 @@
 import uuid
 from time import sleep
 
+import time
 from fastapi import FastAPI, File, UploadFile, Form
 from typing import Annotated
 from fastapi.responses import StreamingResponse
@@ -47,6 +48,10 @@ async def encrypt_image(image_url: str = Form(...), password: str = Form(...), i
     # Convert original image data to bytes
     imageOrigBytes = imageOrig.tobytes()
 
+    # Start timing encryption
+    encryption_start = time.time()
+
+
     # Encrypt
     key = password.encode('utf-8')
     cipher = AES.new(key, AES.MODE_CBC, iv)
@@ -63,6 +68,12 @@ async def encrypt_image(image_url: str = Form(...), password: str = Form(...), i
     # Save the encrypted image to a BMP file in memory
     success = cv2.imwrite(temp_filename, imageEncrypted)
         # Create a temporary file to upload to Cloudinary
+
+    encryption_end = time.time()
+    encryption_time = encryption_end - encryption_start
+    print(f"Encryption time: {encryption_time:.4f} seconds")
+
+
     if not success:
         return JSONResponse(content={"error": "Failed to save encrypted image"}, status_code=401)
 
@@ -79,6 +90,8 @@ async def encrypt_image(image_url: str = Form(...), password: str = Form(...), i
         temp_filename_steg = None
         stegImageUnprocessedPath = None
         if isSteg:
+            # Start timing steganography
+            steg_start = time.time()
             # Hide decrypted image in carrier image
             try :
 
@@ -100,6 +113,12 @@ async def encrypt_image(image_url: str = Form(...), password: str = Form(...), i
                     return JSONResponse(content={"error": "Failed to hide encrypted image in carrier image"}, status_code=500)
                 temp_filename_steg = f"steg_image_{uuid.uuid4()}.png"
                 cv2.imwrite(temp_filename_steg, steg_img)
+
+                # End timing steganography
+                steg_end = time.time()
+                steg_time = steg_end - steg_start
+                print(f"Steganography time: {steg_time:.4f} seconds")
+
                 upload_result_steg = cloudinary.uploader.upload(
                     temp_filename_steg,
                     folder="steg_images",
@@ -166,6 +185,7 @@ async def decrypt_image(
     #     return JSONResponse(content={"error": "Failed to fetch image from URL"}, status_code=400)
     #
     mode = AES.MODE_CBC
+    ivSize = AES.block_size if mode == AES.MODE_CBC else 0
 
     # Initialize variables before the try block
     steg_unprocessed = None
